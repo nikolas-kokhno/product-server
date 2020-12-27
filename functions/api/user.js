@@ -27,6 +27,6 @@ exports.loginUser = (request, response) => {
       console.error(error);
       return response
         .status(403)
-        .json({ general: "wrong credentials, please try again" });
+        .json({ error: "wrong credentials, please try again" });
     });
 };
