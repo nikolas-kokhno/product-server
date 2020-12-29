@@ -7,7 +7,6 @@ const {
   deleteProduct,
   postOneProduct,
   editProduct,
-  setImage,
 } = require("./api/product");
 
 const app = require("express")();
@@ -18,7 +17,6 @@ app.post("/login", loginUser);
 
 /* Product routes */
 app.get("/products", auth, getAllProducts);
-app.post("/products/img", auth, setImage);
 app.post("/products", auth, postOneProduct);
 app.put("/products/:productId", auth, editProduct);
 app.delete("/products/:productId", auth, deleteProduct);

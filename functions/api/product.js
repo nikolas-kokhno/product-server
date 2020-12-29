@@ -2,9 +2,10 @@ const { db, admin } = require("../utils/admin");
 const config = require("../utils/config");
 
 exports.getAllProducts = (request, response) => {
+  console.log(request.user.username);
   db.collection("products")
     .where("username", "==", request.user.username)
-    .orderBy("createdAt", "desc")
+    .orderBy("desc")
     .get()
     .then((data) => {
       let products = [];
@@ -14,9 +15,9 @@ exports.getAllProducts = (request, response) => {
           title: doc.data().title,
           desc: doc.data().desc,
           price: doc.data().price,
-          imageUrl: doc.data().imageUrl,
+          imageURL: doc.data().imageURL,
           discount: doc.data().discount,
-          createdAt: doc.data().createdAt,
+          discountTo: doc.data().discountTo,
         });
       });
       return response.json(products);
@@ -27,38 +28,7 @@ exports.getAllProducts = (request, response) => {
     });
 };
 
-exports.postOneProduct = (request, response) => {
-  if (request.body.title.trim() === "") {
-    return response.status(400).json({ title: "Must not be empty" });
-  }
-
-  const newProductItem = {
-    username: request.user.username,
-    title: request.body.title,
-    desc: request.body.desc,
-    price: request.body.price,
-    discount: request.body.discount,
-    createdAt: new Date().toISOString(),
-  };
-
-  db.collection("products")
-    .add(newProductItem)
-    .then((doc) => {
-      const responseProductItem = newProductItem;
-      responseProductItem.id = doc.id;
-      return response.json(responseProductItem);
-    })
-    .catch((err) => {
-      response.status(500).json({ error: "Something went wrong" });
-      console.error(err);
-    });
-};
-
 exports.editProduct = (request, response) => {
-  if (request.body.productId || request.body.createdAt) {
-    response.status(403).json({ message: "Not allowed to edit" });
-  }
-
   let document = db.collection("products").doc(`${request.params.productId}`);
   document
     .update(request.body)
@@ -73,7 +43,7 @@ exports.editProduct = (request, response) => {
     });
 };
 
-exports.setImage = (request, response) => {
+exports.postOneProduct = (request, response) => {
   const BusBoy = require("busboy");
   const path = require("path");
   const os = require("os");
@@ -82,6 +52,33 @@ exports.setImage = (request, response) => {
 
   let imageFileName;
   let imageToBeUploaded = {};
+
+  let productData = {};
+
+  busboy.on("field", (fieldname, val) => {
+    switch (fieldname) {
+      case "product_id": {
+        productData.product_id = val;
+      }
+      case "title": {
+        productData.title = val;
+      }
+      case "desc": {
+        productData.desc = val;
+      }
+      case "price": {
+        productData.price = val;
+      }
+      case "discount": {
+        productData.discount = val;
+      }
+      case "discountTo": {
+        productData.discountTo = val;
+      }
+      default:
+        fieldname;
+    }
+  });
 
   busboy.on("file", (fieldname, file, filename, encoding, mimetype) => {
     if (mimetype !== "image/png" && mimetype !== "image/jpeg") {
@@ -95,12 +92,6 @@ exports.setImage = (request, response) => {
     const filePath = path.join(os.tmpdir(), imageFileName);
     imageToBeUploaded = { filePath, mimetype };
     file.pipe(fs.createWriteStream(filePath));
-  });
-
-  let product_id = {};
-
-  busboy.on("field", function (fieldname, val) {
-    product_id = val;
   });
 
   deleteImage(imageFileName);
@@ -118,12 +109,12 @@ exports.setImage = (request, response) => {
       })
       .then(() => {
         const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${config.storageBucket}/o/${imageFileName}?alt=media`;
-        return db.doc(`/products/${product_id}`).update({
-          imageUrl,
-        });
+        productData.username = request.user.username;
+        productData.imageURL = imageUrl;
+        return db.collection("products").add(productData);
       })
       .then(() => {
-        return response.json({ message: "Image uploaded successfully" });
+        return response.json(productData);
       })
       .catch((error) => {
         console.error(error);
