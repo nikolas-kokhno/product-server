@@ -1,8 +1,12 @@
 const { db, admin } = require("../utils/admin");
 const config = require("../utils/config");
 
+const BusBoy = require("busboy");
+const path = require("path");
+const os = require("os");
+const fs = require("fs");
+
 exports.getAllProducts = (request, response) => {
-  console.log(request.user.username);
   db.collection("products")
     .where("username", "==", request.user.username)
     .orderBy("desc")
@@ -30,24 +34,97 @@ exports.getAllProducts = (request, response) => {
 
 exports.editProduct = (request, response) => {
   let document = db.collection("products").doc(`${request.params.productId}`);
-  document
-    .update(request.body)
-    .then(() => {
-      response.json({ message: "Updated successfully" });
-    })
-    .catch((err) => {
-      console.error(err);
-      return response.status(500).json({
-        error: err.code,
-      });
-    });
+
+  const busboy = new BusBoy({ headers: request.headers });
+
+  let imageFileName;
+  let imageToBeUploaded = {};
+
+  let productData = {};
+
+  busboy.on("field", (fieldname, val) => {
+    switch (fieldname) {
+      case "title": {
+        productData.title = val;
+      }
+      case "desc": {
+        productData.desc = val;
+      }
+      case "price": {
+        productData.price = val;
+      }
+      case "discount": {
+        productData.discount = val;
+      }
+      case "discountTo": {
+        productData.discountTo = val;
+      }
+      default:
+        fieldname;
+    }
+  });
+
+  busboy.on("file", (fieldname, file, filename, encoding, mimetype) => {
+    if (mimetype !== "image/png" && mimetype !== "image/jpeg") {
+      return response.status(400).json({ error: "Wrong file type submited" });
+    }
+
+    const imageExtension = filename.split(".")[filename.split(".").length - 1];
+    imageFileName = `${
+      (request.user.user_id, new Date().getTime())
+    }.${imageExtension}`;
+    const filePath = path.join(os.tmpdir(), imageFileName);
+    imageToBeUploaded = { filePath, mimetype };
+    file.pipe(fs.createWriteStream(filePath));
+  });
+
+  busboy.on("finish", () => {
+    if (imageFileName) {
+      admin
+        .storage()
+        .bucket()
+        .upload(imageToBeUploaded.filePath, {
+          resumable: false,
+          metadata: {
+            metadata: {
+              contentType: imageToBeUploaded.mimetype,
+            },
+          },
+        })
+        .then(() => {
+          const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${config.storageBucket}/o/${imageFileName}?alt=media`;
+          productData.imageURL = imageUrl;
+          document
+            .update(productData)
+            .then(() => {
+              response.json({ message: "Updated successfully" });
+            })
+            .catch((err) => {
+              console.error(err);
+              return response.status(500).json({
+                error: err.code,
+              });
+            });
+        });
+    } else {
+      document
+        .update(productData)
+        .then(() => {
+          response.json({ message: "Updated successfully" });
+        })
+        .catch((err) => {
+          console.error(err);
+          return response.status(500).json({
+            error: err.code,
+          });
+        });
+    }
+  });
+
+  busboy.end(request.rawBody);
 };
 
 exports.postOneProduct = (request, response) => {
-  const BusBoy = require("busboy");
-  const path = require("path");
-  const os = require("os");
-  const fs = require("fs");
   const busboy = new BusBoy({ headers: request.headers });
 
   let imageFileName;
